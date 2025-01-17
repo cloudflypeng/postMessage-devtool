@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pm-devtool</title>
+    <style>
+        .message-config {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+            position: relative;
+        }
+        .remove-btn {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+        }
+        .message-log {
+            border: 1px solid #eee;
+            padding: 10px;
+            margin: 10px 0;
+            background: #f9f9f9;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-item {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .log-time {
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="main-container">
+        <h1>pm-devtool</h1>
+        <h3>生成调试链接</h3>
+        <div id="form-container" style="width: 500px;">
+            <div id="messages-container"></div>
+            <button id="add-message">添加消息配置</button>
+            <button id="generate">生成链接</button>
+        </div>
+    </div>
+
+    <div id="log-container" style="display: none;">
+        <h3>消息发送日志</h3>
+        <div class="message-log"></div>
+    </div>
+
+    <script>
+        // 消息配置模板
+        const messageTemplate = `
+            <div class="message-config">
+                <button class="remove-btn">删除</button>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <label>消息类型</label>
+                    <textarea class="type" placeholder="请输入消息类型"></textarea>
+                    <label>消息数据</label>
+                    <textarea class="data" placeholder="请输入消息数据-json字符串"></textarea>
+                    <label>循环发送间隔(ms)</label>
+                    <input type="number" class="interval" min="1" placeholder="请输入循环发送间隔">
+                    <label>发送次数</label>
+                    <input type="number" class="count" min="1" placeholder="请输入发送次数">
+                </div>
+            </div>
+        `;
+
+        // 添加消息配置
+        document.getElementById('add-message').addEventListener('click', () => {
+            const container = document.getElementById('messages-container');
+            const div = document.createElement('div');
+            div.innerHTML = messageTemplate;
+            container.appendChild(div);
+
+            // 添加删除按钮事件
+            div.querySelector('.remove-btn').addEventListener('click', () => {
+                div.remove();
+            });
+        });
+
+        // 生成链接
+        document.getElementById('generate').addEventListener('click', () => {
+            const configs = [];
+            document.querySelectorAll('.message-config').forEach(config => {
+                configs.push({
+                    type: config.querySelector('.type').value,
+                    data: config.querySelector('.data').value,
+                    interval: parseInt(config.querySelector('.interval').value),
+                    count: parseInt(config.querySelector('.count').value)
+                });
+            });
+
+            // 将配置转换为URL参数
+            const params = new URLSearchParams();
+            params.set('configs', JSON.stringify(configs));
+            const newUrl = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+            
+            window.open(newUrl);
+            // 可以根据需要选择复制到剪贴板或直接跳转
+            console.log('生成的链接:', newUrl);
+        });
+
+        // 页面加载时解析URL参数
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            const configs = params.get('configs');
+            
+            if (configs) {
+                const configArray = JSON.parse(configs);
+                configArray.forEach(config => {
+                    const container = document.getElementById('messages-container');
+                    const div = document.createElement('div');
+                    div.innerHTML = messageTemplate;
+                    container.appendChild(div);
+
+                    // 填充数据
+                    div.querySelector('.type').value = config.type;
+                    div.querySelector('.data').value = config.data;
+                    div.querySelector('.interval').value = config.interval;
+                    div.querySelector('.count').value = config.count;
+
+                    // 添加删除按钮事件
+                    div.querySelector('.remove-btn').addEventListener('click', () => {
+                        div.remove();
+                    });
+                });
+
+                // 如果有配置参数，开始发送消息
+                startSendingMessages(configArray);
+            }
+        });
+
+        // 判断是否在iframe中
+        const isInIframe = window !== window.top;
+        const mainContainer = document.getElementById('main-container');
+        const logContainer = document.getElementById('log-container');
+        
+        // 添加日志的函数
+        function addLog(config, index) {
+            const logDiv = document.querySelector('.message-log');
+            const time = new Date().toLocaleTimeString();
+            const logItem = document.createElement('div');
+            logItem.className = 'log-item';
+            logItem.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <div>类型: ${config.type}</div>
+                <div>数据: ${config.data}</div>
+                <div>第 ${index + 1}/${config.count} 次发送</div>
+            `;
+            logDiv.appendChild(logItem);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // 根据是否在iframe中显示不同的内容
+        if (isInIframe) {
+            mainContainer.style.display = 'none';
+            logContainer.style.display = 'block';
+        }
+
+        // 修改发送消息的函数
+        async function startSendingMessages(configs) {
+            for (const config of configs) {
+                for (let i = 0; i < config.count; i++) {
+                    const messageData = {
+                        type: config.type,
+                        data: JSON.parse(config.data)
+                    };
+                    
+                    // 发送消息到父窗口
+                    if (isInIframe) {
+                        window.parent.postMessage(messageData, '*');
+                    } else {
+                        window.postMessage(messageData, '*');
+                    }
+                    
+                    // 添加日志
+                    addLog(config, i);
+                    
+                    // 等待指定的间隔时间
+                    await new Promise(resolve => setTimeout(resolve, config.interval));
+                }
+            }
+        }
+    </script>
+</body>
+</html>
